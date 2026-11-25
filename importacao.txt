@@ -1,0 +1,60 @@
+// Restrições de unicidade 
+CREATE CONSTRAINT deputado_id  IF NOT EXISTS FOR (n:Deputado)   REQUIRE n.id    IS UNIQUE;
+CREATE CONSTRAINT partido_sig  IF NOT EXISTS FOR (n:Partido)    REQUIRE n.sigla IS UNIQUE;
+CREATE CONSTRAINT estado_sig   IF NOT EXISTS FOR (n:Estado)     REQUIRE n.sigla IS UNIQUE;
+CREATE CONSTRAINT frente_id    IF NOT EXISTS FOR (n:Frente)     REQUIRE n.id    IS UNIQUE;
+CREATE CONSTRAINT prop_id      IF NOT EXISTS FOR (n:Proposicao) REQUIRE n.id    IS UNIQUE;
+CREATE CONSTRAINT votacao_id   IF NOT EXISTS FOR (n:Votacao)    REQUIRE n.id    IS UNIQUE;
+ 
+// Deputados, Partidos e Estados 
+LOAD CSV WITH HEADERS FROM 'file:///deputados.csv' AS l
+MERGE (d:Deputado {id: toInteger(l.deputado_id)})
+  SET d.nome = l.deputado_nome
+MERGE (p:Partido {sigla: l.deputado_siglaPartido})
+MERGE (e:Estado  {sigla: l.deputado_siglaUf})
+MERGE (d)-[:FILIADO_A]->(p)
+MERGE (d)-[:REPRESENTA]->(e);
+ 
+// Frentes e membros 
+LOAD CSV WITH HEADERS FROM 'file:///membros_frente.csv' AS l
+MATCH (d:Deputado {id: toInteger(l.idDeputado)})
+MERGE (f:Frente {id: toInteger(l.idFrente)})
+  SET f.titulo = l.titulo
+MERGE (d)-[m:MEMBRO_DE]->(f)
+  SET m.cargo = l.cargo;
+ 
+// Proposições e autores 
+LOAD CSV WITH HEADERS FROM 'file:///proposicoes.csv' AS l
+MERGE (p:Proposicao {id: toInteger(l.proposicao_id)})
+  SET p.tipo = l.proposicao_siglaTipo, p.numero = toInteger(l.proposicao_numero),
+      p.ano = toInteger(l.proposicao_ano), p.ementa = l.proposicao_ementa,
+      p.nome = l.proposicao_siglaTipo + ' ' + l.proposicao_numero + '/' + l.proposicao_ano;
+ 
+LOAD CSV WITH HEADERS FROM 'file:///autores.csv' AS l
+MATCH (d:Deputado   {id: toInteger(l.idDeputado)})
+MATCH (p:Proposicao {id: toInteger(l.idProposicao)})
+MERGE (d)-[a:AUTOR_DE]->(p)
+  SET a.ordem = toInteger(l.ordem);
+ 
+// Votações e ligação com proposições 
+LOAD CSV WITH HEADERS FROM 'file:///votacoes.csv' AS l
+MERGE (v:Votacao {id: l.id})
+  SET v.data = date(left(l.data, 10)), v.descricao = l.descricao,
+      v.aprovada = (l.aprovacao = '1'),
+      v.votosSim = toInteger(l.votosSim), v.votosNao = toInteger(l.votosNao);
+ 
+LOAD CSV WITH HEADERS FROM 'file:///votacao_proposicao.csv' AS l
+MATCH (v:Votacao    {id: l.idVotacao})
+MATCH (p:Proposicao {id: toInteger(l.proposicao_id)})
+MERGE (v)-[:SOBRE]->(p);
+ 
+// Votos 
+:auto LOAD CSV WITH HEADERS FROM 'file:///votos.csv' AS l
+CALL {
+  WITH l
+  MATCH (d:Deputado {id: toInteger(l.deputado_id)})
+  MATCH (v:Votacao  {id: l.idVotacao})
+  MERGE (d)-[r:VOTOU]->(v)
+    SET r.voto = trim(l.voto)
+} IN TRANSACTIONS OF 10000 ROWS;
+
